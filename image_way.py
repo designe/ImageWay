@@ -6,11 +6,21 @@ import torchvision.transforms as transforms
 
 from PIL import Image
 
+model_info = {
+    'resnet152' : models.resnet152(pretrained=True),
+    'resnet18' : models.resnet18(pretrained=True),
+    'inception' : models.inception_v3(pretrained=True),
+    'resnext101_32x8d_wsl' : torch.hub.load('facebookresearch/WSL-images', 'resnext101_32x8d_wsl'),
+    'resnext101_32x16d_wsl' : torch.hub.load('facebookresearch/WSL-images', 'resnext101_32x16d_wsl'),
+    'resnext101_32x32d_wsl' : torch.hub.load('facebookresearch/WSL-images', 'resnext101_32x32d_wsl'),
+    'resnext101_32x48d_wsl' : torch.hub.load('facebookresearch/WSL-images', 'resnext101_32x48d_wsl')
+    }
+
 class ImageWay:
     def __init__(self, cuda=False):
         self.device = torch.device("cuda" if cuda else "cpu")
-        self.layer_output_size = 2048
-        self.model, self.extraction_layer = self.get_model()
+        self.layer_output_size = 1000
+        self.model, self.extraction_layer = self.get_model('resnext101_32x48d_wsl')
         self.model = self.model.to(self.device)
         self.model.eval()
         self.scalar = transforms.Resize((224, 224))
@@ -18,28 +28,22 @@ class ImageWay:
                                               std=[0.229, 0.224, 0.225])
         self.to_tensor = transforms.ToTensor()
         
-    def get_model(self):
-        model = models.resnet152(pretrained=True)
-        layer = model._modules.get('avgpool')
-
+    def get_model(self, model_name='resnet152'):
+        model = model_info[model_name]
+        layer = model._modules.get('fc')
         return model, layer
 
     def image2vec(self, img, tensor=False):
-        image = self.normalize(self.to_tensor(self.scalar(img))).unsqueeze(0).to(self.device)
+        image = img.convert('RGB')
+        image = self.normalize(self.to_tensor(self.scalar(image))).unsqueeze(0).to(self.device)
 
-        print(image.shape)
-        embedding = torch.zeros(1, self.layer_output_size, 1, 1)
+        embedding = torch.zeros(1, self.layer_output_size)
+        # embedding = torch.zeros(1, self.layer_output_size, 1, 1)
         def copy_data(m, i, o):
             embedding.copy_(o.data)
 
-        new_image = torch.zeros(1, 3, 224, 224)
-        if image.shape[1] >= 3:
-            new_image = image[:, :3, :, :]
-        else:
-            new_image[:, :image.shape[1], :, :] = image[:, :image.shape[1], :, :]
-        
         h = self.extraction_layer.register_forward_hook(copy_data)
-        h_x = self.model(new_image)
+        h_x = self.model(image)
         h.remove()
 
         if tensor:
@@ -50,7 +54,15 @@ class ImageWay:
     def image_path2vec(self, image_path, tensor=False):
         return self.image2vec(Image.open(image_path), tensor)
 
-image_a = ImageWay().image_path2vec("{address}", tensor=True)
-image_b = ImageWay().image_path2vec("{address}", tensor=True)
+#image_a = ImageWay().image_path2vec("../analogwatch/20_face_76.png", tensor=True)
+#image_b = ImageWay().image_path2vec("../analogwatch/20_face_77.png", tensor=True)
+#image_c = ImageWay().image_path2vec("../analogwatch/20_face_78.png", tensor=True)
 
-print(F.cosine_similarity(image_a, image_b))
+#print(F.cosine_similarity(image_a.view(1, -1), image_b.view(1, -1)))
+#print(F.cosine_similarity(image_a.view(1, -1), image_c.view(1, -1)))
+#print(F.cosine_similarity(image_b.view(1, -1), image_c.view(1, -1)))
+
+#print(F.pairwise_distance(image_a.view(1, -1), image_b.view(1, -1)))
+#print(F.pairwise_distance(image_a.view(1, -1), image_c.view(1, -1)))
+#print(F.pairwise_distance(image_b.view(1, -1), image_c.view(1, -1)))
+
